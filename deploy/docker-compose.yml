@@ -1,0 +1,154 @@
+# =============================================================================
+# Symphony Docker Compose
+#
+# Services:
+#   symphony  - Elixir/OTP app that polls Linear and spawns Codex agents
+#   litellm   - LiteLLM proxy: OpenAI primary, OpenRouter fallback
+#   watchtower- Auto-update containers from latest images (optional)
+#
+# Networks:
+#   symphony-net - Internal bridge; symphony reaches litellm via hostname 'litellm'
+#
+# Usage:
+#   Direct mode (Codex -> OpenAI):    OPENAI_BASE_URL not set in .env
+#   Proxy mode  (Codex -> LiteLLM):   OPENAI_BASE_URL=http://litellm:4000/v1
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # symphony — main orchestrator
+  # ---------------------------------------------------------------------------
+  symphony:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: symphony:local
+    container_name: symphony
+
+    # Bind-mount runtime paths
+    volumes:
+      # Per-issue workspace directories created here
+      - ./workspaces:/home/symphony/workspaces
+      # Your customized workflow file (read-only inside container)
+      - ./WORKFLOW.md:/app/WORKFLOW.md:ro
+      # Persistent log storage
+      - ./logs:/app/log
+      # Optional .codex skills directory (read-only)
+      - ./.codex:/app/.codex:ro
+
+    ports:
+      # Phoenix LiveView dashboard
+      - "4000:4000"
+
+    env_file:
+      - .env
+
+    environment:
+      # Symphony workspace root — maps to the volume above
+      SYMPHONY_WORKSPACE_ROOT: /home/symphony/workspaces
+
+      # ---- OpenAI / Codex ----
+      # OPENAI_API_KEY and OPENAI_BASE_URL are loaded from .env
+      # In proxy mode:  OPENAI_BASE_URL=http://litellm:4000/v1
+      # In direct mode: OPENAI_BASE_URL is unset (Codex talks to api.openai.com)
+
+      # ---- Linear ----
+      # LINEAR_API_KEY loaded from .env
+
+      # ---- GitHub ----
+      # GH_TOKEN and GITHUB_TOKEN loaded from .env
+
+    depends_on:
+      litellm:
+        condition: service_healthy
+
+    restart: unless-stopped
+    networks:
+      - symphony-net
+
+    # Give agents some room — Codex subprocesses can be memory-hungry
+    shm_size: "256m"
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # litellm — OpenAI-compatible proxy with OpenRouter fallback
+  #
+  # Codex points OPENAI_BASE_URL=http://litellm:4000/v1 (proxy mode).
+  # LiteLLM routes: OpenAI primary -> OpenRouter fallback after N failures.
+  # ---------------------------------------------------------------------------
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm
+
+    volumes:
+      # LiteLLM model/routing configuration
+      - ./litellm-config.yaml:/app/config.yaml:ro
+
+    ports:
+      # Expose on host port 4001 so you can call the proxy directly if needed
+      - "4001:4000"
+
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+
+    env_file:
+      - .env
+
+    environment:
+      # These are read by litellm-config.yaml via os.environ/... references
+      # OPENAI_API_KEY, OPENROUTER_API_KEY, LITELLM_MASTER_KEY — all from .env
+      LITELLM_LOG: "INFO"
+
+    restart: unless-stopped
+    networks:
+      - symphony-net
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4000/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # watchtower — automatically pulls updated images (optional)
+  # Remove this service if you don't want auto-updates.
+  # ---------------------------------------------------------------------------
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    # Check for updates every 24 hours (86400 seconds)
+    command: --interval 86400 --cleanup
+
+    restart: unless-stopped
+
+    # Note: watchtower doesn't need symphony-net — it talks to Docker daemon
+    #       directly via the socket
+
+# ---------------------------------------------------------------------------
+# Networks
+# ---------------------------------------------------------------------------
+networks:
+  symphony-net:
+    driver: bridge
+    name: symphony-net
+
+# ---------------------------------------------------------------------------
+# Named volumes (for data that should persist across container recreation)
+# Using bind-mount ./workspaces and ./logs instead for easy host access,
+# but declaring these for reference if you switch to named volumes later.
+# ---------------------------------------------------------------------------
+volumes:
+  workspaces:
+    driver: local
+  logs:
+    driver: local
