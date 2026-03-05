@@ -1,0 +1,130 @@
+# =============================================================================
+# LiteLLM Proxy Configuration
+# =============================================================================
+#
+# Architecture:
+#
+#   Codex (OPENAI_BASE_URL=http://litellm:4000/v1)
+#     |
+#     v
+#   LiteLLM Proxy (port 4000)
+#     |
+#     +-- [Primary]  OpenAI API (api.openai.com)
+#     |     model: openai/gpt-5.3-codex
+#     |     Uses: OPENAI_API_KEY
+#     |
+#     +-- [Fallback] OpenRouter (openrouter.ai/api/v1)
+#           model: openrouter/openai/gpt-5.3-codex
+#           Uses: OPENROUTER_API_KEY
+#           Triggered after: 3 failed attempts to primary
+#
+# Additional models available for direct use via OPENAI_BASE_URL:
+#   - claude-sonnet-4-6   (via OpenRouter)
+#   - gemini-2.5-pro      (via OpenRouter)
+#
+# To call an additional model from Codex or any OpenAI-compatible client:
+#   model: "claude-sonnet-4-6" or "gemini-2.5-pro"
+#   base_url: http://litellm:4000/v1
+# =============================================================================
+
+model_list:
+  # ---------------------------------------------------------------------------
+  # Primary: OpenAI gpt-5.3-codex (direct)
+  # ---------------------------------------------------------------------------
+  - model_name: "gpt-5.3-codex"
+    litellm_params:
+      model: "openai/gpt-5.3-codex"
+      api_key: os.environ/OPENAI_API_KEY
+      # Uses OpenAI's standard base URL by default (api.openai.com/v1)
+
+  # ---------------------------------------------------------------------------
+  # Fallback: gpt-5.3-codex via OpenRouter
+  # Activated automatically when the primary fails (rate limit, outage, etc.)
+  # ---------------------------------------------------------------------------
+  - model_name: "gpt-5.3-codex-fallback"
+    litellm_params:
+      model: "openrouter/openai/gpt-5.3-codex"
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: "https://openrouter.ai/api/v1"
+      extra_headers:
+        HTTP-Referer: "https://github.com/t4tarzan/symphony"
+        X-Title: "Symphony Codex Agent"
+
+  # ---------------------------------------------------------------------------
+  # Additional model: Claude Sonnet 4.6 via OpenRouter
+  # Use this for tasks needing strong reasoning/long context
+  # ---------------------------------------------------------------------------
+  - model_name: "claude-sonnet-4-6"
+    litellm_params:
+      model: "openrouter/anthropic/claude-sonnet-4-6"
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: "https://openrouter.ai/api/v1"
+      extra_headers:
+        HTTP-Referer: "https://github.com/t4tarzan/symphony"
+        X-Title: "Symphony Codex Agent"
+
+  # ---------------------------------------------------------------------------
+  # Additional model: Gemini 2.5 Pro via OpenRouter
+  # Use this for large-context analysis (1M+ token context window)
+  # ---------------------------------------------------------------------------
+  - model_name: "gemini-2.5-pro"
+    litellm_params:
+      model: "openrouter/google/gemini-2.5-pro"
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: "https://openrouter.ai/api/v1"
+      extra_headers:
+        HTTP-Referer: "https://github.com/t4tarzan/symphony"
+        X-Title: "Symphony Codex Agent"
+
+# =============================================================================
+# Router settings — fallback chain and retry logic
+# =============================================================================
+router_settings:
+  # Routing strategy: try models in order, shuffle among equally-weighted ones
+  routing_strategy: "simple-shuffle"
+
+  # Retry a failed request up to 3 times before failing over
+  num_retries: 3
+
+  # Retry on these specific error types (avoids wasting retries on auth errors)
+  retry_after_key_rotation: true
+
+  # Fallback chain:
+  # If "gpt-5.3-codex" (primary) fails after retries, try "gpt-5.3-codex-fallback"
+  fallbacks:
+    - "gpt-5.3-codex":
+        - "gpt-5.3-codex-fallback"
+
+  # Timeout per request (seconds)
+  timeout: 600
+
+  # Enable verbose routing logs (set to false in production to reduce noise)
+  set_verbose: true
+
+# =============================================================================
+# General / server settings
+# =============================================================================
+general_settings:
+  # Master key for authenticating requests to this LiteLLM proxy
+  # Set LITELLM_MASTER_KEY in your .env file
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+  # Drop unsupported parameters instead of erroring
+  # Needed because Codex may send OpenAI-specific params not in OpenRouter spec
+  drop_params: true
+
+  # Enable request/response logging
+  store_model_in_db: false
+
+  # Allow unauthenticated health check endpoint
+  allow_requests_on_db_unavailable: true
+
+# =============================================================================
+# Litellm server / telemetry
+# =============================================================================
+litellm_settings:
+  # Redact sensitive data from logs
+  redact_user_api_key_info: true
+
+  # Log level (DEBUG | INFO | WARNING | ERROR)
+  log_level: "INFO"
