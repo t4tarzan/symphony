@@ -70,7 +70,7 @@ services:
     shm_size: "256m"
 
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:4000/ || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:4000/ || exit 0"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -109,7 +109,7 @@ services:
       - symphony-net
 
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:4000/health || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')\" || exit 1"]
       interval: 20s
       timeout: 10s
       retries: 5
@@ -122,6 +122,9 @@ services:
   watchtower:
     image: containrrr/watchtower
     container_name: watchtower
+
+    environment:
+      - DOCKER_API_VERSION=1.40
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

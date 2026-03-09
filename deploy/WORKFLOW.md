@@ -3,7 +3,7 @@ tracker:
   kind: linear
   # Right-click your Linear project → Copy URL → the slug is in the URL path
   # e.g. for https://linear.app/myteam/project/my-project-abc123 -> "my-project-abc123"
-  project_slug: "YOUR_PROJECT_SLUG"
+  project_slug: "symphony-playground-91875b4405d1"
   active_states:
     - Todo
     - In Progress
@@ -56,6 +56,7 @@ codex:
     type: workspaceWrite
 
 server:
+  host: "0.0.0.0"
   port: 4000
 ---
 
