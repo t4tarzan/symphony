@@ -1,0 +1,52 @@
+# ============================================================
+# .dockerignore — files excluded from Docker build context
+# Keeps the build context small and avoids leaking secrets
+# ============================================================
+
+# Secrets — NEVER send to Docker daemon
+.env
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+
+# Version control
+.git
+.gitignore
+.github
+
+# Workspace directories (bind-mounted at runtime, not baked in)
+workspaces/
+logs/
+
+# Development artifacts
+node_modules/
+_build/
+deps/
+.mix/
+*.beam
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+Thumbs.db
+
+# Documentation (not needed in container)
+*.md
+!README.md
+
+# CI artifacts
+coverage/
+.nyc_output/
+dist/
+out/
+
+# Docker files themselves (avoid circular reference)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
